@@ -121,6 +121,7 @@ def train(cfg, writer, logger):
             scheduler.step()
             model.train()
             images = images.to(device)
+            #print(labels)
             labels = labels.to(device)
 
             optimizer.zero_grad()
@@ -147,9 +148,7 @@ def train(cfg, writer, logger):
                 writer.add_scalar("loss/train_loss", loss.item(), i + 1)
                 time_meter.reset()
 
-            if (i + 1) % cfg["training"]["val_interval"] == 0 or (i + 1) == cfg["training"][
-                "train_iters"
-            ]:
+            if (i + 1) % cfg["training"]["val_interval"] == 0 or (i + 1) == cfg["training"]["train_iters"]:
                 model.eval()
                 with torch.no_grad():
                     for i_val, (images_val, labels_val) in tqdm(enumerate(valloader)):
@@ -198,6 +197,7 @@ def train(cfg, writer, logger):
 
             if (i + 1) == cfg["training"]["train_iters"]:
                 flag = False
+                writer.file_writer.flush()
                 break
 
 
@@ -227,3 +227,4 @@ if __name__ == "__main__":
     logger.info("Let the games begin")
 
     train(cfg, writer, logger)
+    
