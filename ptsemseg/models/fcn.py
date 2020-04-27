@@ -9,7 +9,7 @@ from ptsemseg.loss import cross_entropy2d
 
 # FCN32s
 class fcn32s(nn.Module):
-    def __init__(self, n_classes=21, learned_billinear=False):
+    def __init__(self, n_classes=21, learned_billinear=True):
         super(fcn32s, self).__init__()
         self.learned_billinear = learned_billinear
         self.n_classes = n_classes
@@ -72,7 +72,15 @@ class fcn32s(nn.Module):
         )
 
         if self.learned_billinear:
-            raise NotImplementedError
+            self.upscore = nn.ConvTranspose2d(
+                self.n_classes, self.n_classes, 64, stride=32, bias=False
+            )
+
+        for m in self.modules():
+            if isinstance(m, nn.ConvTranspose2d):
+                m.weight.data.copy_(
+                    get_upsampling_weight(m.in_channels, m.out_channels, m.kernel_size[0])
+                )
 
     def forward(self, x):
         conv1 = self.conv_block1(x)
@@ -83,9 +91,13 @@ class fcn32s(nn.Module):
 
         score = self.classifier(conv5)
 
-        out = F.upsample(score, x.size()[2:])
-
-        return out
+        if self.learned_billinear:
+            us = self.upscore(score)
+            out = us[:, :, 19:19 + x.size()[2], 19:19 + x.size()[3]].contiguous()
+            return out
+        else:
+            out = F.upsample(score, x.size()[2:])
+            return out
 
     def init_vgg16_params(self, vgg16, copy_fc8=True):
         blocks = [
