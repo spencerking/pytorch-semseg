@@ -120,7 +120,7 @@ class fcn32s(nn.Module):
 
 
 class fcn16s(nn.Module):
-    def __init__(self, n_classes=21, learned_billinear=False):
+    def __init__(self, n_classes=21, learned_billinear=True):
         super(fcn16s, self).__init__()
         self.learned_billinear = learned_billinear
         self.n_classes = n_classes
@@ -184,9 +184,19 @@ class fcn16s(nn.Module):
 
         self.score_pool4 = nn.Conv2d(512, self.n_classes, 1)
 
-        # TODO: Add support for learned upsampling
         if self.learned_billinear:
-            raise NotImplementedError
+            self.upscore2 = nn.ConvTranspose2d(
+                self.n_classes, self.n_classes, 4, stride=2, bias=False
+            )
+            self.upscore16 = nn.ConvTranspose2d(
+                self.n_classes, self.n_classes, 32, stride=16, bias=False
+            )
+
+        for m in self.modules():
+            if isinstance(m, nn.ConvTranspose2d):
+                m.weight.data.copy_(
+                    get_upsampling_weight(m.in_channels, m.out_channels, m.kernel_size[0])
+                )
 
     def forward(self, x):
         conv1 = self.conv_block1(x)
@@ -196,11 +206,23 @@ class fcn16s(nn.Module):
         conv5 = self.conv_block5(conv4)
 
         score = self.classifier(conv5)
-        score_pool4 = self.score_pool4(conv4)
 
-        score = F.upsample(score, score_pool4.size()[2:])
-        score += score_pool4
-        out = F.upsample(score, x.size()[2:])
+        if self.learned_billinear:
+            upscore2 = self.upscore2(score)
+            score_pool4c = self.score_pool4(conv4)[
+                :, :, 5 : 5 + upscore2.size()[2], 5 : 5 + upscore2.size()[3]
+            ]
+            upscore_pool4 = self.upscore16(upscore2 + score_pool4c)
+            
+            out = self.upscore16(upscore_pool4)[
+                :, :, 27 : 27 + x.size()[2], 27 : 27 + x.size()[3]
+            ]
+            return out.contiguous()
+        else:
+            score_pool4 = self.score_pool4(conv4)
+            score = F.upsample(score, score_pool4.size()[2:])
+            score += score_pool4
+            out = F.upsample(score, x.size()[2:])
 
         return out
 
